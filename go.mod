@@ -6,6 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/rs/zerolog v1.34.0
+	go.yaml.in/yaml/v2 v2.4.3
 )
 
 require (
