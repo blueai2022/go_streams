@@ -64,18 +64,18 @@ func (s *Streamer) MediaHandler() http.HandlerFunc {
 
 // newStreamSession manages the lifecycle of a WebSocket streaming session
 //
-// It is currently showing one-way streaming from client to server, will be extended to
+// TODO: Currently showing one-way streaming from client to server, will be extended to
 // handle bidirectional streaming (ingress/egress).
+//
 // TODO: Add s.wg.Go() for egress stream when ready
 //
-// s.wg.Go(func() {
-//     s.handleIngressMedia(conn, sessionID, payload)
-// })
-// s.wg.Go(func() {
-//     s.handleEgressMedia(conn, sessionID, config)
-// })
+//	s.wg.Go(func() {
+//	    s.handleIngressMedia(conn, sessionID, payload)
+//	})
 //
-
+//	s.wg.Go(func() {
+//	    s.handleEgressMedia(conn, sessionID, config)
+//	})
 func (s *Streamer) newStreamSession(reqCtx context.Context, conn Conn, sessionID string) {
 	defer conn.Close()
 
