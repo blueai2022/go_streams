@@ -1,4 +1,3 @@
-// Description: Main entry point for the Comcast Telco Agent Gateway (CTAG) ESL outbound server application.
 package main
 
 import (

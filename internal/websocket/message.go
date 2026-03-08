@@ -1,7 +1,6 @@
 package websocket
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
@@ -18,25 +17,18 @@ func (a *AudioPayload) Validate() error {
 	if a.Codec == "" {
 		return fmt.Errorf("codec is required")
 	}
+
 	if a.SampleRate == 0 {
 		return fmt.Errorf("sample_rate must be positive")
 	}
+
 	if a.PTime == 0 {
 		return fmt.Errorf("ptime must be positive")
 	}
+
 	if a.Channels == 0 {
 		return fmt.Errorf("channels must be positive")
 	}
 
 	return nil
-}
-
-// decodeMessage decodes JSON message into the specified type
-func decodeMessage[T any](data []byte) (*T, error) {
-	var msg T
-	if err := json.Unmarshal(data, &msg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal message: %w", err)
-	}
-
-	return &msg, nil
 }

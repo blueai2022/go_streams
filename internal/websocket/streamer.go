@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 type Streamer struct {
@@ -64,18 +65,9 @@ func (s *Streamer) MediaHandler() http.HandlerFunc {
 
 // newStreamSession manages the lifecycle of a WebSocket streaming session
 //
-// TODO: Currently showing one-way streaming from client to server, will be extended to
+// It is currently showing one-way streaming from client to server, will be extended to
 // handle bidirectional streaming (ingress/egress).
-//
-// TODO: Add s.wg.Go() for egress stream when ready
-//
-//	s.wg.Go(func() {
-//	    s.handleIngressMedia(conn, sessionID, payload)
-//	})
-//
-//	s.wg.Go(func() {
-//	    s.handleEgressMedia(conn, sessionID, config)
-//	})
+// TODO: Add handleEgressMedia(errGrpCtx, conn, sessionID, config)
 func (s *Streamer) newStreamSession(reqCtx context.Context, conn Conn, sessionID string) {
 	defer conn.Close()
 
@@ -178,9 +170,27 @@ func (s *Streamer) newStreamSession(reqCtx context.Context, conn Conn, sessionID
 		Uint8("channels", payload.Channels).
 		Msg("audio payload received")
 
-	// Handle bidirectional streaming
-	// TODO: Add s.wg.Go() for egress stream when ready
-	s.handleIngressMedia(conn, sessionID, payload)
+	errGrp, errGrpCtx := errgroup.WithContext(reqCtx)
+
+	errGrp.Go(func() error {
+		s.handleIngressMedia(errGrpCtx, conn, sessionID, payload)
+
+		return nil
+	})
+
+	errGrp.Go(func() error {
+		// TODO: Implement egress media handler for sending media back to client (e.g. processed audio/video)
+		// s.handleEgressMedia(errGrpCtx, conn, sessionID, config)
+
+		return nil
+	})
+
+	if err := errGrp.Wait(); err != nil {
+		log.Error().
+			Err(err).
+			Str("session_id", sessionID).
+			Msg("bidirectional streaming session exited with error")
+	}
 
 	log.Info().
 		Str("session_id", sessionID).
@@ -188,44 +198,50 @@ func (s *Streamer) newStreamSession(reqCtx context.Context, conn Conn, sessionID
 }
 
 // handleIngressMedia processes incoming media frames from client (audio/video)
-func (s *Streamer) handleIngressMedia(conn Conn, sessionID string, config *protocol.AudioPayload) {
+func (s *Streamer) handleIngressMedia(ctx context.Context, conn Conn, sessionID string, config *protocol.AudioPayload) {
 	log.Info().
 		Str("session_id", sessionID).
 		Msg("starting ingress media handler")
 
 	for {
-		messageType, message, err := conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Error().
-					Err(err).
-					Str("session_id", sessionID).
-					Msg("WebSocket read error")
+		select {
+		case <-ctx.Done():
+			log.Info().
+				Str("session_id", sessionID).
+				Msg("ingress media handler canceled")
+
+			return
+
+		default:
+			messageType, message, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Error().
+						Err(err).
+						Str("session_id", sessionID).
+						Msg("WebSocket read error")
+				}
+
+				return
 			}
 
-			break
-		}
+			if messageType == websocket.BinaryMessage {
+				// Process media frame (audio or video)
+				log.Debug().
+					Int("size", len(message)).
+					Str("session_id", sessionID).
+					Str("codec", config.Codec).
+					Msg("received media frame")
 
-		if messageType == websocket.BinaryMessage {
-			// Process media frame (audio or video)
-			log.Debug().
-				Int("size", len(message)).
-				Str("session_id", sessionID).
-				Str("codec", config.Codec).
-				Msg("received media frame")
-
-			// TODO: Process media frame (send to speech recognition, video processing, etc.)
-		} else {
-			log.Warn().
-				Str("session_id", sessionID).
-				Int("message_type", messageType).
-				Msg("unexpected message type, expected binary")
+				// TODO: Process media frame (send to speech recognition, video processing, etc.)
+			} else {
+				log.Warn().
+					Str("session_id", sessionID).
+					Int("message_type", messageType).
+					Msg("unexpected message type, expected binary")
+			}
 		}
 	}
-
-	log.Info().
-		Str("session_id", sessionID).
-		Msg("ingress media handler stopped")
 }
 
 // Close gracefully closes all active WebSocket connections
