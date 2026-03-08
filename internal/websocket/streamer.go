@@ -5,12 +5,23 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/blueai2022/go_streams/internal/agent"
 	"github.com/blueai2022/go_streams/internal/protocol"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
+
+// MediaSource provides a stream of media data to send to clients
+type MediaSource interface {
+	// Reader returns a read-only channel that yields media frames
+	// The channel will be closed when the source is exhausted or context is canceled
+	Reader(ctx context.Context) <-chan []byte
+
+	// Close releases resources associated with the media source
+	Close() error
+}
 
 type Streamer struct {
 	conns  sync.Map
@@ -67,7 +78,6 @@ func (s *Streamer) MediaHandler() http.HandlerFunc {
 //
 // It is currently showing one-way streaming from client to server, will be extended to
 // handle bidirectional streaming (ingress/egress).
-// TODO: Add handleEgressMedia(errGrpCtx, conn, sessionID, config)
 func (s *Streamer) newStreamSession(reqCtx context.Context, conn Conn, sessionID string) {
 	defer conn.Close()
 
@@ -77,7 +87,6 @@ func (s *Streamer) newStreamSession(reqCtx context.Context, conn Conn, sessionID
 	done := make(chan struct{})
 	defer close(done)
 
-	// Monitor both contexts
 	go func() {
 		select {
 		case <-s.ctx.Done():
@@ -179,10 +188,10 @@ func (s *Streamer) newStreamSession(reqCtx context.Context, conn Conn, sessionID
 	})
 
 	errGrp.Go(func() error {
-		// TODO: Implement egress media handler for sending media back to client (e.g. processed audio/video)
-		// s.handleEgressMedia(errGrpCtx, conn, sessionID, config)
+		// Create per-session agent (human or AI) for bidirectional media streaming
+		agentSession := agent.NewSession(sessionID, payload)
 
-		return nil
+		return s.handleEgressMedia(errGrpCtx, conn, sessionID, agentSession)
 	})
 
 	if err := errGrp.Wait(); err != nil {
@@ -226,19 +235,69 @@ func (s *Streamer) handleIngressMedia(ctx context.Context, conn Conn, sessionID 
 			}
 
 			if messageType == websocket.BinaryMessage {
-				// Process media frame (audio or video)
+				// TODO: Process media frame (audio or video): write to channel for person or AI agent
+
 				log.Debug().
 					Int("size", len(message)).
 					Str("session_id", sessionID).
 					Str("codec", config.Codec).
 					Msg("received media frame")
-
-				// TODO: Process media frame (send to speech recognition, video processing, etc.)
 			} else {
 				log.Warn().
 					Str("session_id", sessionID).
 					Int("message_type", messageType).
 					Msg("unexpected message type, expected binary")
+			}
+		}
+	}
+}
+
+// handleEgressMedia processes outgoing media frames to client
+func (s *Streamer) handleEgressMedia(
+	ctx context.Context,
+	conn Conn,
+	sessionID string,
+	source MediaSource,
+) error {
+	log.Info().
+		Str("session_id", sessionID).
+		Msg("starting egress media handler")
+
+	defer source.Close()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().
+				Str("session_id", sessionID).
+				Msg("egress media handler canceled")
+
+			return ctx.Err()
+
+		case frame, ok := <-source.Reader(ctx):
+			if !ok {
+				log.Info().
+					Str("session_id", sessionID).
+					Msg("egress media source closed")
+
+				return nil
+			}
+
+			// Validate frame size against limits
+			// TODO check frame size and split if exceeds WebSocket limits
+
+			log.Debug().
+				Int("size", len(frame)).
+				Str("session_id", sessionID).
+				Msg("sending media frame to client")
+
+			if err := conn.WriteMessage(websocket.BinaryMessage, frame); err != nil {
+				log.Error().
+					Err(err).
+					Str("session_id", sessionID).
+					Msg("failed to write media frame")
+
+				return err
 			}
 		}
 	}
