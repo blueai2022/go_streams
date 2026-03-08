@@ -13,16 +13,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// MediaSource provides a stream of media data to send to clients
-type MediaSource interface {
-	// Reader returns a read-only channel that yields media frames
-	// The channel will be closed when the source is exhausted or context is canceled
-	Reader(ctx context.Context) <-chan []byte
-
-	// Close releases resources associated with the media source
-	Close() error
-}
-
 type Streamer struct {
 	conns  sync.Map
 	wg     sync.WaitGroup
@@ -257,7 +247,7 @@ func (s *Streamer) handleEgressMedia(
 	ctx context.Context,
 	conn Conn,
 	sessionID string,
-	source MediaSource,
+	source agent.Session,
 ) error {
 	log.Info().
 		Str("session_id", sessionID).

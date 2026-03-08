@@ -7,22 +7,30 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Session represents a person or AI agent session that provides media streaming
-type Session struct {
+type Session interface {
+	// Reader returns a read-only channel that yields media frames
+	Reader(ctx context.Context) <-chan []byte
+
+	// Close releases resources associated with the agent session
+	Close() error
+}
+
+// session represents a person or AI agent session that provides media streaming
+type session struct {
 	sessionID string
 	config    *protocol.AudioPayload
 }
 
 // NewSession creates a new person or AI agent session
-func NewSession(sessionID string, config *protocol.AudioPayload) *Session {
-	return &Session{
+func NewSession(sessionID string, config *protocol.AudioPayload) Session {
+	return &session{
 		sessionID: sessionID,
 		config:    config,
 	}
 }
 
 // Reader returns a read-only channel that yields media frames
-func (s *Session) Reader(ctx context.Context) <-chan []byte {
+func (s *session) Reader(ctx context.Context) <-chan []byte {
 	ch := make(chan []byte)
 
 	go func() {
@@ -45,6 +53,6 @@ func (s *Session) Reader(ctx context.Context) <-chan []byte {
 }
 
 // Close releases resources associated with the agent session
-func (s *Session) Close() error {
+func (s *session) Close() error {
 	return nil
 }
