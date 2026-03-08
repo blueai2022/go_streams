@@ -90,7 +90,7 @@ func New(opts ...Options) (*Settings, error) {
 		}
 	}
 
-	if err := settings.Load(); err != nil {
+	if err := settings.readFile(); err != nil {
 		return nil, fmt.Errorf("failed to load configuration: %v", err)
 	}
 
@@ -139,15 +139,6 @@ func (s *Settings) unmarshal(bytes []byte) error {
 	}
 
 	zerolog.SetGlobalLevel(s.Log.Level)
-
-	return nil
-}
-
-// Load loads the configuration from a file
-func (s *Settings) Load() error {
-	if err := s.readFile(); err != nil {
-		return fmt.Errorf("error reading file: %w", err)
-	}
 
 	return nil
 }
